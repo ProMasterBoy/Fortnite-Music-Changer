@@ -3,18 +3,17 @@ using System.Linq;
 using System.Windows.Forms;
 using System.Diagnostics;
 using System.IO;
-using VideoLibrary;
-using MediaToolkit;
-using MediaToolkit.Model;
 using ProSwapperMusic.Properties;
 using System.Runtime.InteropServices;
 using System.Drawing;
 using System.Net;
-
+using Newtonsoft.Json.Linq;
+using System.Reflection;
 namespace ProSwapperMusic
 {
     public partial class Main : Form
     {
+        public static WebClient web = new WebClient();
         private LogReader logReader;
         [DllImport("Gdi32.dll", EntryPoint = "CreateRoundRectRgn")]
         private static extern IntPtr CreateRoundRectRgn
@@ -32,15 +31,19 @@ namespace ProSwapperMusic
         public static extern int SendMessage(IntPtr hWnd, int Msg, int wParam, int lParam);
         [DllImport("user32.dll")]
         public static extern bool ReleaseCapture();
+
+        public static Icon appIcon = Icon.ExtractAssociatedIcon(Assembly.GetExecutingAssembly().Location);
         public Main()
         {
             InitializeComponent();
             Region = Region.FromHrgn(CreateRoundRectRgn(0, 0, Width, Height, 20, 20));
             menuStrip1.BackColor = Color.DodgerBlue;
-            string fileversion = System.Reflection.Assembly.GetExecutingAssembly().GetName().Version.ToString();
+            string fileversion = Assembly.GetExecutingAssembly().GetName().Version.ToString();
             version = fileversion.Substring(0, fileversion.Length - 4);
 
             versionlabel.Text = "Version: " + version;
+            this.Icon = appIcon;
+            notifyIcon1.Icon = appIcon;
         }
         public static string TitleMusic { get; set; }
         public static string LobbyMusic { get; set; }
@@ -88,6 +91,7 @@ namespace ProSwapperMusic
             button2.Text = "Downloading...";
             button2.Enabled = false;
             vid.RunWorkerAsync();
+
         }
         private void comboBox1_MouseEnter(object sender, EventArgs e)
         {
@@ -143,7 +147,15 @@ namespace ProSwapperMusic
                 LobbyMusic = savedsongs[1];
                 VictoryMusic = savedsongs[2];
             }
-            
+            if (Settings.Default.InMatch == true)
+            {
+                checkBox2.CheckState = CheckState.Checked;
+            }
+            else
+            {
+                checkBox2.CheckState = CheckState.Unchecked;
+            }
+
             RefreshSongs();
             
 
@@ -247,40 +259,34 @@ namespace ProSwapperMusic
 
         private void vid_DoWork(object sender, System.ComponentModel.DoWorkEventArgs e)
         {
-            if (!ytlink.Text.Contains("youtu") && !ytlink.Text.Contains("http"))
+
+            if (!ytlink.Text.Contains("youtu"))
             {
                 MessageBox.Show("That isn't a valid youtube link!");
                 return;
             }
-            redo: try
-            {
-                if (!Directory.Exists(songsfolder))
-                    Directory.CreateDirectory(songsfolder);
 
-                var source = songsfolder + @"\";
-                var youtube = YouTube.Default;
-                var vid = youtube.GetVideo(ytlink.Text);
-                File.WriteAllBytes(source + vid.FullName, vid.GetBytes());
-                var inputFile = new MediaFile { Filename = source + vid.FullName };
-                var outputFile = new MediaFile { Filename = $"{source + vid.FullName}.mp3" };
+            string vidid = ytlink.Text.Substring(ytlink.Text.Length - 11);
+            string url = "https://www.yt-download.org/api/button/mp3/" + vidid;
+            string mp3url = GetLine(web.DownloadString(url), 36).Replace("<a href=\"", "").Replace("\" class=\"shadow-xl bg-blue-600 text-white hover:text-gray-300 focus:text-gray-300 focus:outline-none rounded-md p-2 border-solid border-2 border-black ml-2 mb-2 w-24\">", "");
+            //<a href="https://www.yt-download.org/download/3D_Yhpg0-dk/mp3/192/1606521564/ad0e6b61579295ef460aa5ef7b37fe8f58ad17d17afb09f35fa399f134c199f6/0" class="shadow-xl bg-blue-600 text-white hover:text-gray-300 focus:text-gray-300 focus:outline-none rounded-md p-2 border-solid border-2 border-black ml-2 mb-2 w-24">
+            if (!Directory.Exists(songsfolder))
+                Directory.CreateDirectory(songsfolder);
 
-                using (var engine = new Engine())
-                {
-                    engine.GetMetadata(inputFile);
+            var source = songsfolder + @"\";
+            //https://www.youtube.com/oembed?url=https://youtu.be/JUewJm2ssBw&format=json
 
-                    engine.Convert(inputFile, outputFile);
-                }
-                if (File.Exists(source + vid.FullName))
-                {
-                    File.Delete((source + vid.FullName));//Deletes mp4 file
-                }
-                MessageBox.Show("Downloaded Song!", "Pro Swapper Music", MessageBoxButtons.OK, MessageBoxIcon.Information);
-            }
-            catch
-            {
-                goto redo;
-            }
+            dynamic videodata = JObject.Parse(web.DownloadString("https://www.youtube.com/oembed?url=https://youtu.be/" + vidid + "&format=json"));
+            string fileName = videodata.title;
+            web.DownloadFile(mp3url, source + fileName + ".mp3");
+           
         }
+        private static string GetLine(string text, int lineNo)
+        {
+            string[] lines = text.Replace("\r", "").Split('\n');
+            return lines.Length >= lineNo ? lines[lineNo - 1] : null;
+        }
+
         private void timer1_Tick(object sender, EventArgs e)
         {
 
@@ -313,6 +319,15 @@ namespace ProSwapperMusic
                     AudioPlayer.PlayMusic(VictoryMusic);
                     break;
                 case FortniteState.InGame:
+                    if (Settings.Default.InMatch == true)
+                    {
+                        AudioPlayer.PlayMusic(LobbyMusic);
+                    }
+                    else
+                    {
+                        AudioPlayer.StopMusic();
+                    }
+                    break;
                 case FortniteState.None:
                     AudioPlayer.StopMusic();
                     break;
@@ -357,7 +372,7 @@ namespace ProSwapperMusic
         private void checkForUpdateToolStripMenuItem_Click(object sender, EventArgs e)
         {
 
-            WebClient web = new WebClient();
+            
                 string[] info = web.DownloadString("https://proswapper.xyz/music.txt").Split(';');
                 if (version == info[0])
                 {
@@ -382,10 +397,26 @@ namespace ProSwapperMusic
                 File.Copy(thisexe, file, true);//Shortcut doesnt exist
         }
 
+        private void checkBox2_CheckedChanged(object sender, EventArgs e)
+        {
+            if (checkBox2.Checked)
+            {
+                Settings.Default.InMatch = true;
+            }
+            else
+            {
+                Settings.Default.InMatch = false;
+            }
+            Settings.Default.Save();
+            RefreshSongs();
+        }
+
         private void vid_RunWorkerCompleted(object sender, System.ComponentModel.RunWorkerCompletedEventArgs e)
         {
             button2.Text = "Download";
             button2.Enabled = true;
+            MessageBox.Show("Downloaded Song!", "Pro Swapper Music", MessageBoxButtons.OK, MessageBoxIcon.Information);
         }
+
     }
 }
