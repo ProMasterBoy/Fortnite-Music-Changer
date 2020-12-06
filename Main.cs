@@ -9,6 +9,8 @@ using System.Drawing;
 using System.Net;
 using Newtonsoft.Json.Linq;
 using System.Reflection;
+using System.Text.RegularExpressions;
+
 namespace ProSwapperMusic
 {
     public partial class Main : Form
@@ -268,18 +270,25 @@ namespace ProSwapperMusic
 
             string vidid = ytlink.Text.Substring(ytlink.Text.Length - 11);
             string url = "https://www.yt-download.org/api/button/mp3/" + vidid;
-            string mp3url = GetLine(web.DownloadString(url), 36).Replace("<a href=\"", "").Replace("\" class=\"shadow-xl bg-blue-600 text-white hover:text-gray-300 focus:text-gray-300 focus:outline-none rounded-md p-2 border-solid border-2 border-black ml-2 mb-2 w-24\">", "");
+            string mp3url = GetLine(web.DownloadString(url), 35).Replace("\" class=\"shadow-xl bg-blue-600 text-white hover:text-gray-300 focus:text-gray-300 focus:outline-none rounded-md p-2 border-solid border-2 border-black ml-2 mb-2 w-25\">", "").Replace("<a href=\"", "");
             //<a href="https://www.yt-download.org/download/3D_Yhpg0-dk/mp3/192/1606521564/ad0e6b61579295ef460aa5ef7b37fe8f58ad17d17afb09f35fa399f134c199f6/0" class="shadow-xl bg-blue-600 text-white hover:text-gray-300 focus:text-gray-300 focus:outline-none rounded-md p-2 border-solid border-2 border-black ml-2 mb-2 w-24">
+            //<a href="https://www.yt-download.org/download/x8XUx5pGQQs/mp3/192/1607236654/c68f2ab14d8aa2b6b75fa802025c11d5f31af01a1df86768a6c083d4247f2ffb/0" class="shadow-xl bg-blue-600 text-white hover:text-gray-300 focus:text-gray-300 focus:outline-none rounded-md p-2 border-solid border-2 border-black ml-2 mb-2 w-25">
             if (!Directory.Exists(songsfolder))
                 Directory.CreateDirectory(songsfolder);
 
             var source = songsfolder + @"\";
             //https://www.youtube.com/oembed?url=https://youtu.be/JUewJm2ssBw&format=json
-
             dynamic videodata = JObject.Parse(web.DownloadString("https://www.youtube.com/oembed?url=https://youtu.be/" + vidid + "&format=json"));
             string fileName = videodata.title;
-            web.DownloadFile(mp3url, source + fileName + ".mp3");
-           
+            string a = Removeillegal(fileName);
+            
+            web.DownloadFile(mp3url, source + a + ".mp3");
+        }
+        private static string Removeillegal(string var)
+        {
+            string regexSearch = new string(Path.GetInvalidFileNameChars()) + new string(Path.GetInvalidPathChars());
+            Regex r = new Regex(string.Format("[{0}]", Regex.Escape(regexSearch)));
+            return r.Replace(var, "");
         }
         private static string GetLine(string text, int lineNo)
         {
