@@ -12,7 +12,7 @@
       <Value Profile="(Default)">True</Value>
     </Setting>
     <Setting Name="Songs" Type="System.String" Scope="User">
-      <Value Profile="(Default)" />
+      <Value Profile="(Default)">None?None?None</Value>
     </Setting>
     <Setting Name="InMatch" Type="System.Boolean" Scope="User">
       <Value Profile="(Default)">False</Value>

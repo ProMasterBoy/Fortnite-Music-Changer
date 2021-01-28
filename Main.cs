@@ -7,15 +7,16 @@ using ProSwapperMusic.Properties;
 using System.Runtime.InteropServices;
 using System.Drawing;
 using System.Net;
-using Newtonsoft.Json.Linq;
 using System.Reflection;
 using System.Text.RegularExpressions;
-
+using WMPLib;
+using MaterialSkin;
+using System.Threading;
+using System.Web.Script.Serialization;
 namespace ProSwapperMusic
 {
     public partial class Main : Form
     {
-        public static WebClient web = new WebClient();
         private LogReader logReader;
         [DllImport("Gdi32.dll", EntryPoint = "CreateRoundRectRgn")]
         private static extern IntPtr CreateRoundRectRgn
@@ -27,25 +28,87 @@ namespace ProSwapperMusic
             int nWidthEllipse, // width of ellipse
             int nHeightEllipse // height of ellipse
         );
-        public const int WM_NCLBUTTONDOWN = 0xA1;
-        public const int HT_CAPTION = 0x2;
         [DllImport("user32.dll")]
         public static extern int SendMessage(IntPtr hWnd, int Msg, int wParam, int lParam);
         [DllImport("user32.dll")]
         public static extern bool ReleaseCapture();
-
-        public static Icon appIcon = Icon.ExtractAssociatedIcon(Assembly.GetExecutingAssembly().Location);
+        private void Form1_MouseDown(object sender, MouseEventArgs e)
+        {
+            if (e.Button == MouseButtons.Left)
+            {
+                ReleaseCapture();
+                SendMessage(Handle, 0xA1, 0x2, 0);
+            }
+        }
+        
         public Main()
         {
             InitializeComponent();
+            var materialSkinManager = MaterialSkinManager.Instance;
+            materialSkinManager.Theme = MaterialSkinManager.Themes.DARK;
+            materialSkinManager.ColorScheme = new ColorScheme(Primary.Blue800, Primary.BlueGrey900, Primary.BlueGrey500, Accent.LightBlue200, TextShade.WHITE);
             Region = Region.FromHrgn(CreateRoundRectRgn(0, 0, Width, Height, 20, 20));
-            menuStrip1.BackColor = Color.DodgerBlue;
             string fileversion = Assembly.GetExecutingAssembly().GetName().Version.ToString();
             version = fileversion.Substring(0, fileversion.Length - 4);
-
             versionlabel.Text = "Version: " + version;
-            this.Icon = appIcon;
+            Icon = appIcon;
             notifyIcon1.Icon = appIcon;
+
+
+            string logfile = getLogFile().Replace("FortniteGame.log", "");
+
+            logReader = new LogReader(logfile);
+            if (Settings.Default.PlayInBackground == true)
+                checkBox1.Checked = true;
+            else
+                checkBox1.Checked = false;
+
+            if (Settings.Default.InMatch == true)
+                checkBox2.Checked = true;
+            else
+                checkBox2.Checked = false;
+
+
+            string proswapperfolder = Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData) + @"\ProSwapperMusic";
+
+            if (!Directory.Exists(proswapperfolder))
+                Directory.CreateDirectory(proswapperfolder);
+
+            if (!Directory.Exists(songsfolder))
+                Directory.CreateDirectory(songsfolder);
+
+            trackBar2.Value = Settings.Default.Volume;
+            status.Start();
+
+            string[] savedsongs = Settings.Default.Songs.Split('?');
+            string[] files = Directory.GetFiles(songsfolder, "*.mp3*", SearchOption.AllDirectories);
+            titlemenu.Items.AddRange(files);
+            lobbymenu.Items.AddRange(files);
+            victory.Items.AddRange(files);
+
+
+            titlemenu.Text = savedsongs[0];
+                lobbymenu.Text = savedsongs[1];
+                victory.Text = savedsongs[2];
+
+                TitleMusic = savedsongs[0];
+                LobbyMusic = savedsongs[1];
+                VictoryMusic = savedsongs[2];
+
+          
+            RefreshSongs();
+
+
+
+            if (File.Exists(Environment.GetFolderPath(Environment.SpecialFolder.Startup) + @"\" + AppDomain.CurrentDomain.FriendlyName))
+            {
+                launchOnPCStartupToolStripMenuItem.Checked = true;
+                string thisexe = AppDomain.CurrentDomain.FriendlyName;
+                string file = Environment.GetFolderPath(Environment.SpecialFolder.Startup) + @"\" + thisexe;
+                File.Copy(thisexe, file, true);//Shortcut doesnt exist
+            }
+            else
+                launchOnPCStartupToolStripMenuItem.Checked = false;
         }
         public static string TitleMusic { get; set; }
         public static string LobbyMusic { get; set; }
@@ -53,10 +116,8 @@ namespace ProSwapperMusic
 
         private string getLogFile()
         {
-            if (Settings.Default.LogFile != "")
-            {
+            if (Settings.Default.LogFile.Length > 1)
                 return Settings.Default.LogFile; // If path already exists
-            }
             else
             {
                 string path = Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData) + @"\FortniteGame\Saved\Logs\FortniteGame.log";
@@ -69,127 +130,36 @@ namespace ProSwapperMusic
                 }
                 else
                 {
-                    OpenFileDialog o = new OpenFileDialog();
-                    o.Title = @"Select your FortniteGame.Log,  It should be in AppData\Local\FortniteGame\Saved\Logs\FortniteGame.log";
-                    if (o.ShowDialog() == DialogResult.OK)
+                    using (OpenFileDialog o = new OpenFileDialog())
                     {
-                        Settings.Default.LogFile = o.FileName;
-                        Settings.Default.Save();
-                        return o.FileName;
+                        o.Title = @"Select your FortniteGame.Log,  It should be in AppData\Local\FortniteGame\Saved\Logs\FortniteGame.log";
+                        if (o.ShowDialog() == DialogResult.OK)
+                        {
+                            Settings.Default.LogFile = o.FileName;
+                            Settings.Default.Save();
+                            return o.FileName;
+                        }
+                        else
+                        {
+                            MessageBox.Show("Please select your Fortnite Logs Folder!", "Pro Swapper Music", MessageBoxButtons.OK, MessageBoxIcon.Information);
+                            Application.Restart();
+                            return string.Empty;
+                        }
                     }
-                    else
-                    {
-                        MessageBox.Show("Please select your Fortnite Logs Folder!", "Pro Swapper Music", MessageBoxButtons.OK, MessageBoxIcon.Information);
-                        Application.Restart();
-                        return "a";
-                    }
+                    
                 }
             }
         }
-
-        private void button1_Click(object sender, EventArgs e)=> Process.Start("com.epicgames.launcher://apps/Fortnite?action=launch&silent=false");
-        private void button2_Click(object sender, EventArgs e)
-        {
-            button2.Text = "Downloading...";
-            button2.Enabled = false;
-            vid.RunWorkerAsync();
-
-        }
-        private void comboBox1_MouseEnter(object sender, EventArgs e)
-        {
-            titlemenu.Items.Clear();
-            string[] files = Directory.GetFiles(songsfolder, "*.mp3*", SearchOption.AllDirectories);
-            titlemenu.Items.AddRange(files);
-        }
-
-        private void comboBox2_MouseEnter(object sender, EventArgs e)
-        {
-            lobbymenu.Items.Clear();
-            string[] files = Directory.GetFiles(songsfolder, "*.mp3*", SearchOption.AllDirectories);
-            lobbymenu.Items.AddRange(files);
-        }
-
-        private void comboBox3_MouseEnter(object sender, EventArgs e)
-        {
-            victory.Items.Clear();
-            string[] files = Directory.GetFiles(songsfolder, "*.mp3*", SearchOption.AllDirectories);
-            victory.Items.AddRange(files);
-        }
-        public static string version { get; set; }
-        static string songsfolder = Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData) + @"\ProSwapperMusic\Songs";
-        private void Form1_Load(object sender, EventArgs e)
-        {
-            
-        string logfile = getLogFile().Replace("FortniteGame.log", "");
-
-            logReader = new LogReader(logfile);
-            if (Settings.Default.PlayInBackground == true)
-                checkBox1.Checked = true;
-            else
-                checkBox1.Checked = false;
-
-            string proswapperfolder = Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData) + @"\ProSwapperMusic";
-
-            if (!Directory.Exists(proswapperfolder))
-                Directory.CreateDirectory(proswapperfolder);
-
-            if (!Directory.Exists(songsfolder))
-                Directory.CreateDirectory(songsfolder);
-
-            trackBar1.Value = Settings.Default.Volume;
-            status.Start();
-            if (Settings.Default.Songs.Length >= 30)
-            {
-                string[] savedsongs = Settings.Default.Songs.Split('>');
-                titlemenu.Text = savedsongs[0];
-                lobbymenu.Text = savedsongs[1];
-                victory.Text = savedsongs[2];
-
-                TitleMusic = savedsongs[0];
-                LobbyMusic = savedsongs[1];
-                VictoryMusic = savedsongs[2];
-            }
-            if (Settings.Default.InMatch == true)
-            {
-                checkBox2.CheckState = CheckState.Checked;
-            }
-            else
-            {
-                checkBox2.CheckState = CheckState.Unchecked;
-            }
-
-            RefreshSongs();
-            
-
-
-            if (File.Exists(Environment.GetFolderPath(Environment.SpecialFolder.Startup) + @"\" + AppDomain.CurrentDomain.FriendlyName))
-                launchOnPCStartupToolStripMenuItem.Checked = true;
-            else
-                launchOnPCStartupToolStripMenuItem.Checked = false;
-        }
-
+       
         private void Form1_FormClosing(object sender, FormClosingEventArgs e)
         {
             Settings.Default.PlayInBackground = checkBox1.Checked;
-            Settings.Default.Songs = titlemenu.Text + ">" + lobbymenu.Text + ">" + victory.Text;
+            Settings.Default.InMatch = checkBox2.Checked;
+            Settings.Default.Songs = titlemenu.Text + "?" + lobbymenu.Text + "?" + victory.Text;
             Settings.Default.Save();
             Environment.Exit(0);
         }
 
-        private void trackBar1_ValueChanged(object sender, EventArgs e)
-        {
-            AudioPlayer.ChangeVolume(trackBar1.Value);
-            Settings.Default.Volume = trackBar1.Value;
-            Settings.Default.Save();
-        }
-
-        private void checkBox1_Click(object sender, EventArgs e)
-        {
-            if (checkBox1.Checked == true)
-                AudioPlayer.ChangeVolume(Settings.Default.Volume);
-            else
-                AudioPlayer.ChangeVolume(0); // to click the button they have to be in the background of fortnite, so just set the volume to 0
-        }
 
         private void comboBox1_SelectedIndexChanged(object sender, EventArgs e)
         {
@@ -212,16 +182,16 @@ namespace ProSwapperMusic
         private void minimiseToTrayToolStripMenuItem_Click(object sender, EventArgs e)
         {
             notifyIcon1.Visible = true;
-            this.Hide();
+            Hide();
         }
 
         private void notifyIcon1_MouseClick(object sender, MouseEventArgs e)
         {
-            this.Show();
+            Show();
             notifyIcon1.Visible = false;
         }
 
-        private void reloadMusicToolStripMenuItem_Click(object sender, EventArgs e)=> RefreshSongs();
+        
         private void songsFolderInfoToolStripMenuItem_Click(object sender, EventArgs e)
         {
             long foldersize = DirSize(new DirectoryInfo(songsfolder));
@@ -258,31 +228,32 @@ namespace ProSwapperMusic
                 MessageBox.Show("phew that was a close one there, almost deleting all your favourite tunes :3", "Pro Swapper Music", MessageBoxButtons.OK, MessageBoxIcon.Information);
             }
         }
-
-        private void vid_DoWork(object sender, System.ComponentModel.DoWorkEventArgs e)
+        public class ytapi
         {
+            public string title { get; set; }
+        }
 
-            if (!ytlink.Text.Contains("youtu"))
-            {
-                MessageBox.Show("That isn't a valid youtube link!");
-                return;
+        public string GetDownloadUrlYT(string vidid)
+        {
+            using (WebClient web = new WebClient())
+            { 
+                string url = "https://www.yt-download.org/file/mp3/" + vidid;
+                string downloaded = web.DownloadString(url);
+                foreach (string line in downloaded.Split(new string[] { Environment.NewLine }, StringSplitOptions.RemoveEmptyEntries))
+                    {
+                    if (line.Contains("https://www.yt-download.org/download/"))
+                        return GetURl(line);
+                    }
+                return string.Empty;
             }
+        }
 
-            string vidid = ytlink.Text.Substring(ytlink.Text.Length - 11);
-            string url = "https://www.yt-download.org/api/button/mp3/" + vidid;
-            string mp3url = GetLine(web.DownloadString(url), 35).Replace("\" class=\"shadow-xl bg-blue-600 text-white hover:text-gray-300 focus:text-gray-300 focus:outline-none rounded-md p-2 border-solid border-2 border-black ml-2 mb-2 w-25\">", "").Replace("<a href=\"", "");
-            //<a href="https://www.yt-download.org/download/3D_Yhpg0-dk/mp3/192/1606521564/ad0e6b61579295ef460aa5ef7b37fe8f58ad17d17afb09f35fa399f134c199f6/0" class="shadow-xl bg-blue-600 text-white hover:text-gray-300 focus:text-gray-300 focus:outline-none rounded-md p-2 border-solid border-2 border-black ml-2 mb-2 w-24">
-            //<a href="https://www.yt-download.org/download/x8XUx5pGQQs/mp3/192/1607236654/c68f2ab14d8aa2b6b75fa802025c11d5f31af01a1df86768a6c083d4247f2ffb/0" class="shadow-xl bg-blue-600 text-white hover:text-gray-300 focus:text-gray-300 focus:outline-none rounded-md p-2 border-solid border-2 border-black ml-2 mb-2 w-25">
-            if (!Directory.Exists(songsfolder))
-                Directory.CreateDirectory(songsfolder);
+        private static string GetURl(string stringwithurl)
+        {
+            foreach (Match m in new Regex(@"\b(?:https?://|www\.)\S+\b", RegexOptions.Compiled | RegexOptions.IgnoreCase).Matches(stringwithurl))
+                return m.Value;
 
-            var source = songsfolder + @"\";
-            //https://www.youtube.com/oembed?url=https://youtu.be/JUewJm2ssBw&format=json
-            dynamic videodata = JObject.Parse(web.DownloadString("https://www.youtube.com/oembed?url=https://youtu.be/" + vidid + "&format=json"));
-            string fileName = videodata.title;
-            string a = Removeillegal(fileName);
-            
-            web.DownloadFile(mp3url, source + a + ".mp3");
+            return "";
         }
         private static string Removeillegal(string var)
         {
@@ -290,26 +261,14 @@ namespace ProSwapperMusic
             Regex r = new Regex(string.Format("[{0}]", Regex.Escape(regexSearch)));
             return r.Replace(var, "");
         }
-        private static string GetLine(string text, int lineNo)
-        {
-            string[] lines = text.Replace("\r", "").Split('\n');
-            return lines.Length >= lineNo ? lines[lineNo - 1] : null;
-        }
-
         private void timer1_Tick(object sender, EventArgs e)
         {
-
-           // label7.Text = "State: " + LogFileReader.FortniteState.ToString();
             if (checkBox1.Checked == false)//Don't play in background
             {
-                if (Pro.IsFNFocused() == false)
-                {
+                if (Pro.IsFNFocused == false)
                     AudioPlayer.ChangeVolume(0);
-                }
                 else
-                {
                     AudioPlayer.ChangeVolume(Settings.Default.Volume);
-                }   
             }
         }
 
@@ -343,22 +302,6 @@ namespace ProSwapperMusic
             }
         }
 
-        private void Form1_MouseDown(object sender, MouseEventArgs e)
-        {
-            if (e.Button == MouseButtons.Left)
-            {
-                ReleaseCapture();
-                SendMessage(Handle, WM_NCLBUTTONDOWN, HT_CAPTION, 0);
-            }
-        }
-
-        private void button4_Click(object sender, EventArgs e)
-        {
-            Application.Exit();
-            Environment.Exit(0);
-        }
-
-        private void button3_Click(object sender, EventArgs e)=> this.WindowState = FormWindowState.Minimized;
         private void pictureBox2_Click(object sender, EventArgs e)
         {
            using (WebClient a = new WebClient())
@@ -380,9 +323,7 @@ namespace ProSwapperMusic
 
         private void checkForUpdateToolStripMenuItem_Click(object sender, EventArgs e)
         {
-
-            
-                string[] info = web.DownloadString("https://proswapper.xyz/music.txt").Split(';');
+                string[] info = new WebClient().DownloadString("https://proswapper.xyz/music.txt").Split(';');
                 if (version == info[0])
                 {
                     MessageBox.Show("You are currently on the newest version of Pro Swapper Music!", "Pro Swapper Music", MessageBoxButtons.OK, MessageBoxIcon.Information);
@@ -393,9 +334,7 @@ namespace ProSwapperMusic
                     Process.Start("https://proswapper.xyz/music");
                 }
         }
-
-        private void pictureBox3_Click(object sender, EventArgs e)=> Process.Start("https://youtube.com/proswapperofficial");
-
+        
         private void launchOnPCStartupToolStripMenuItem_Click(object sender, EventArgs e)
         {
             string thisexe = AppDomain.CurrentDomain.FriendlyName;
@@ -404,28 +343,143 @@ namespace ProSwapperMusic
                 File.Delete(file); //Shortcut exists
             else
                 File.Copy(thisexe, file, true);//Shortcut doesnt exist
+        }        
+        private void materialCheckBox1_Click(object sender, EventArgs e)
+        {
+            if (checkBox1.Checked == true)
+                AudioPlayer.ChangeVolume(Settings.Default.Volume);
+            else
+                AudioPlayer.ChangeVolume(0); // to click the button they have to be in the background of fortnite, so just set the volume to 0
         }
 
-        private void checkBox2_CheckedChanged(object sender, EventArgs e)
+        private void materialCheckBox2_Click(object sender, EventArgs e)
         {
             if (checkBox2.Checked)
-            {
                 Settings.Default.InMatch = true;
-            }
             else
-            {
                 Settings.Default.InMatch = false;
-            }
+
             Settings.Default.Save();
             RefreshSongs();
         }
 
-        private void vid_RunWorkerCompleted(object sender, System.ComponentModel.RunWorkerCompletedEventArgs e)
+        private void materialRaisedButton2_Click(object sender, EventArgs e)
         {
-            button2.Text = "Download";
-            button2.Enabled = true;
-            MessageBox.Show("Downloaded Song!", "Pro Swapper Music", MessageBoxButtons.OK, MessageBoxIcon.Information);
+            if (!ytlink.Text.Contains("youtu") || ytlink.Text == "e.g: youtu.be/dQw4w9WgXcQ")
+            {
+                MessageBox.Show("That isn't a valid youtube link!", "Pro Swapper Music", MessageBoxButtons.OK, MessageBoxIcon.Information);
+                return;
+            }
+            button2.Text = "Downloading...";
+            button2.Enabled = false;
+            if (!Directory.Exists(songsfolder))
+                Directory.CreateDirectory(songsfolder);
+            new Thread(() =>
+            {
+                CheckForIllegalCrossThreadCalls = false;
+                Thread.CurrentThread.IsBackground = true;
+                Thread.CurrentThread.Priority = ThreadPriority.Highest;
+                try
+                {
+                    string vidid = ytlink.Text.Substring(ytlink.Text.Length - 11);
+                    using (WebClient web = new WebClient())
+                    {
+                        string title = Removeillegal(new JavaScriptSerializer().Deserialize<ytapi>(web.DownloadString("https://www.youtube.com/oembed?url=https://youtu.be/" + vidid)).title);
+                        web.DownloadFile(GetDownloadUrlYT(vidid), songsfolder + @"\" + title + ".mp3");
+                    }
+                    //https://www.youtube.com/oembed?url=https://youtu.be/JUewJm2ssBw
+                    button2.Text = "Download";
+                    button2.Enabled = true;
+                    MessageBox.Show("Downloaded Song!", "Pro Swapper Music", MessageBoxButtons.OK, MessageBoxIcon.Information);
+                }
+                catch (Exception ex)
+                {
+                    MessageBox.Show(ex.Message, "Pro Swapper Music", MessageBoxButtons.OK, MessageBoxIcon.Error);
+                }
+            }
+            ).Start();
+        }
+        private void ComboBoxMouseEnter(ComboBox combobox)
+        {
+            string selected = combobox.Text;
+            combobox.Items.Clear();
+            string[] files = Directory.GetFiles(songsfolder, "*.mp3*", SearchOption.AllDirectories);
+            combobox.Items.AddRange(files);
+            combobox.Text = selected;
+        }
+        public static readonly Icon appIcon = Icon.ExtractAssociatedIcon(Assembly.GetExecutingAssembly().Location);
+        private void materialFlatButton2_Click(object sender, EventArgs e)=> WindowState = FormWindowState.Minimized;
+        private void materialFlatButton1_Click(object sender, EventArgs e)=> Application.Exit();
+        private void ytlink_Click(object sender, EventArgs e)=> ytlink.Clear();
+        private void materialRaisedButton1_Click(object sender, EventArgs e) => Process.Start("com.epicgames.launcher://apps/Fortnite?action=launch");
+        private void reloadMusicToolStripMenuItem_Click(object sender, EventArgs e) => RefreshSongs();
+        private void comboBox1_MouseEnter(object sender, EventArgs e) => ComboBoxMouseEnter(titlemenu);
+        private void comboBox2_MouseEnter(object sender, EventArgs e) => ComboBoxMouseEnter(lobbymenu);
+        private void comboBox3_MouseEnter(object sender, EventArgs e) => ComboBoxMouseEnter(victory);
+        public static string version { get; set; }
+        static string songsfolder = Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData) + @"\ProSwapperMusic\Songs";
+        private void pictureBox3_Click(object sender, EventArgs e) => Process.Start("https://youtube.com/proswapperofficial");
+        private void changeLogFileLocationToolStripMenuItem_Click(object sender, EventArgs e)
+        {
+            using (OpenFileDialog o = new OpenFileDialog())
+            {
+                o.Title = @"Select your FortniteGame.Log,  It should be in AppData\Local\FortniteGame\Saved\Logs\FortniteGame.log";
+                if (o.ShowDialog() == DialogResult.OK)
+                {
+                    Settings.Default.LogFile = o.FileName;
+                    Settings.Default.Save();
+                }
+            }
         }
 
+        private void trackBar2_ValueChanged(object sender, EventArgs e)
+        {
+            AudioPlayer.ChangeVolume(trackBar2.Value);
+            Settings.Default.Volume = trackBar2.Value;
+            volumelbl.Text = "Volume:" + trackBar2.Value + "%";
+            Settings.Default.Save();
+        }
     }
+    #region AudioPlayer
+    class AudioPlayer
+    {
+        private static WindowsMediaPlayer mediaPlayer = new WindowsMediaPlayer();
+        /// Uses WMP to play music from a given path
+        public static void PlayMusic(string path) // Plays music
+        {
+            mediaPlayer.settings.setMode("loop", true);
+            try // Try / catch is here to prevent crashes when WMP says it's currently in use.
+            {
+                mediaPlayer.URL = path; // just play it.
+                if (mediaPlayer.playState == WMPPlayState.wmppsPaused || mediaPlayer.playState == WMPPlayState.wmppsTransitioning || mediaPlayer.playState == WMPPlayState.wmppsUndefined) // only play if it's not already playing
+                {
+                    mediaPlayer.controls.play(); // If it's currently paused or swapping tracks, play it.
+                }
+            }
+            catch
+            {}
+        }
+        /// Stop playing music that it's playing.
+        public static void StopMusic() // Pauses the music 
+        {
+            while (true) // loop + try / catch because wmp sometimes doesn't want to play ball.
+            {
+                try
+                {
+                    mediaPlayer.controls.stop();
+                    if (mediaPlayer.playState == WMPPlayState.wmppsStopped || mediaPlayer.playState == WMPPlayState.wmppsReady || mediaPlayer.playState == WMPPlayState.wmppsUndefined)
+                    {
+                        break;
+                    }
+                }
+                catch { }
+            }
+        }
+        /// Changes the volume.
+        public static void ChangeVolume(int volume)
+        {
+            mediaPlayer.settings.volume = volume;
+        }
+    }
+    #endregion
 }

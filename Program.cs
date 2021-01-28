@@ -1,6 +1,5 @@
 ﻿using System;
 using System.Windows.Forms;
-
 namespace ProSwapperMusic
 {
     static class Program
@@ -10,7 +9,7 @@ namespace ProSwapperMusic
         /// </summary>
         [STAThread]
         static void Main()
-        {
+        {              
                 Application.EnableVisualStyles();
                 Application.SetCompatibleTextRenderingDefault(false);
                 Application.Run(new Main());
